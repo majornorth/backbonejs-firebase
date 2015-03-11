@@ -34,9 +34,18 @@
       // A view for an individual todo item
       var TodoView = Backbone.View.extend({
         tagName:  "li",
-        template: _.template("<%= title %>"),
+        template: _.template("<%= title %> <a href='/delete' class='delete'>delete</a>"),
+        events: {
+          "click .delete": "onDelete"
+        },
         initialize: function() {
           this.listenTo(this.model, "change", this.render);
+        },
+        onDelete: function(event) {
+          event.preventDefault();
+          console.log(this.model.collection);
+          this.model.collection.remove(this.model);
+          this.remove();
         },
         render: function() {
           this.$el.html(this.template(this.model.toJSON()));
