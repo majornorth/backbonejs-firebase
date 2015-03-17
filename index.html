@@ -1,27 +1,34 @@
 <html>
   <head>
+
+    <title>Todos</title>
     <!-- Firebase -->
     <script src='https://cdn.firebase.com/js/client/2.2.1/firebase.js'></script>
 
     <!-- jQuery + Underscore + Backbone -->
-    <script src='jquery.js'></script>
-    <script src='underscore.js'></script>
-    <script src='backbone.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.2/underscore-min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.1.2/backbone-min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/backbone.marionette/2.4.1/backbone.marionette.min.js'></script>
 
     <!-- BackboneFire -->
     <script src="https://cdn.firebase.com/libs/backbonefire/0.5.1/backbonefire.min.js"></script>
   </head>
+
   <body>
     <div id="todoapp">
       <ul id="todo-list"></ul>
       <input type="text" id="new-todo" placeholder="New Todo" />
-      <button id="add-todo">Add</button>
     </div>
 
     <script>
       // A simple todo model
       var Todo = Backbone.Model.extend({
-        defaults: { title: "New Todo" }
+        defaults: { title: "New Todo" },
+
+        setTitle: function(title) {
+            this.save({'title': title}, {patch: true});
+        }
       });
 
       // Create a Firebase collection and set the 'firebase' property
@@ -34,9 +41,13 @@
       // A view for an individual todo item
       var TodoView = Backbone.View.extend({
         tagName:  "li",
-        template: _.template("<%= title %> <a href='/delete' class='delete'>delete</a>"),
+        template: _.template("<textarea class='todo-title'></textarea> <a href='/delete' class='delete'>delete</a>"),
+        ui: {
+            'todoTitle': '.todo-title'
+        },
         events: {
-          "click .delete": "onDelete"
+          "click .delete": "onDelete",
+          "keyup @ui.todoTitle": "editTodo"
         },
         initialize: function() {
           this.listenTo(this.model, "change", this.render);
@@ -49,15 +60,19 @@
         },
         render: function() {
           this.$el.html(this.template(this.model.toJSON()));
+          this.$('textarea').val(this.model.get('title'));
           return this;
         },
+        editTodo: _.throttle(function(e) {
+            this.model.setTitle(this.ui.todoTitle.val());
+        }, 2000)
       });
 
       // The view for the entire application
       var AppView = Backbone.View.extend({
         el: $('#todoapp'),
         events: {
-          "click #add-todo" : "createTodo",
+          "keypress #new-todo" : "createTodo",
         },
         initialize: function() {
           this.list = this.$("#todo-list"); // the list to append to
@@ -72,14 +87,16 @@
           this.list.append(view.render().el);
         },
         createTodo: function(e) {
-          if (!this.input.val()) { return; }
+          if (e.keyCode == 13) {
+            if (!this.input.val()) { return; }
 
-          // create a new location in firebase and save the model data
-          // this will trigger the listenTo method above and a new todo view
-          // will be created as well
-          this.collection.create({title: this.input.val()});
+            // create a new location in firebase and save the model data
+            // this will trigger the listenTo method above and a new todo view
+            // will be created as well
+            this.collection.create({title: this.input.val()});
 
-          this.input.val('');
+            this.input.val('');
+          }
         }
       });
 
