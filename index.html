@@ -39,7 +39,7 @@
       });
 
       // A view for an individual todo item
-      var TodoView = Backbone.View.extend({
+      var TodoView = Backbone.Marionette.View.extend({
         tagName:  "li",
         template: _.template("<textarea class='todo-title'></textarea> <a href='/delete' class='delete'>delete</a>"),
         ui: {
@@ -60,12 +60,13 @@
         },
         render: function() {
           this.$el.html(this.template(this.model.toJSON()));
+          this.bindUIElements();
           this.$('textarea').val(this.model.get('title'));
           return this;
         },
-        editTodo: _.throttle(function(e) {
-            this.model.setTitle(this.ui.todoTitle.val());
-        }, 2000)
+        editTodo: _.debounce(function(e) {
+          this.model.setTitle(this.ui.todoTitle.val());
+        }, 500)
       });
 
       // The view for the entire application
