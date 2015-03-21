@@ -16,9 +16,17 @@
   </head>
 
   <body>
-    <div id="todoapp">
-      <ul id="todo-list"></ul>
-      <input type="text" id="new-todo" placeholder="New Todo" />
+
+    <div id="app-container">
+      <div id="todos-container">
+        <ul id="todo-list"></ul>
+        <input type="text" id="new-todo" placeholder="New Todo" />
+      </div>
+
+      <div id="lists-container">
+        <ul id="lists-nav"></ul>
+        <input type="text" id="new-list" placeholder="New List" />
+      </div>
     </div>
 
     <script>
@@ -31,11 +39,23 @@
         }
       });
 
+      // A simple list model
+      var Todo = Backbone.Model.extend({
+        defaults: { title: "New List" }
+      });
+
       // Create a Firebase collection and set the 'firebase' property
       // to the URL of your Firebase
       var TodoCollection = Backbone.Firebase.Collection.extend({
         model: Todo,
-        url: "https://fiery-inferno-5703.firebaseio.com"
+        url: "https://fiery-inferno-5703.firebaseio.com/todos"
+      });
+
+      // Create a Firebase collection and set the 'firebase' property
+      // to the URL of your Firebase
+      var ListCollection = Backbone.Firebase.Collection.extend({
+        model: Todo,
+        url: "https://fiery-inferno-5703.firebaseio.com/lists"
       });
 
       // A view for an individual todo item
@@ -66,12 +86,33 @@
         },
         editTodo: _.debounce(function(e) {
           this.model.setTitle(this.ui.todoTitle.val());
-        }, 500)
+        }, 1000)
       });
 
-      // The view for the entire application
-      var AppView = Backbone.View.extend({
-        el: $('#todoapp'),
+      // A view for an individual todo item
+      var ListNavItem = Backbone.Marionette.View.extend({
+        tagName:  "li",
+        className: "list-title",
+        template: _.template("<%= title %>"),
+        ui: {
+            'listTitle': '.list-title'
+        },
+        events: {
+          "click @ui.listTitle": "onClickRenderTodos"
+        },
+        initialize: function() {
+          this.listenTo(this.model, "change", this.render);
+        },
+        render: function() {
+          this.$el.html(this.template(this.model.toJSON()));
+          this.bindUIElements();
+          return this;
+        }
+      });
+
+      // The view for the todos container
+      var TodosContainerView = Backbone.View.extend({
+        el: $('#todos-container'),
         events: {
           "keypress #new-todo" : "createTodo",
         },
@@ -101,11 +142,47 @@
         }
       });
 
+      // The view for the lists container
+      var ListsContainerView = Backbone.View.extend({
+        el: $('#lists-container'),
+        events: {
+          "keypress #new-list" : "createList",
+        },
+        initialize: function() {
+          this.lists = this.$("#lists-nav"); // the nav to append to
+          this.input = this.$("#new-list"); // the textbox for new lists
+
+          // by listening to when the collection changes we
+          // can add new items in realtime
+          this.listenTo(this.collection, 'add', this.addOne);
+        },
+        addOne: function(list) {
+          var view = new ListNavItem({model: list});
+          this.lists.append(view.render().el);
+        },
+        createList: function(e) {
+          if (e.keyCode == 13) {
+            if (!this.input.val()) { return; }
+
+            // create a new location in firebase and save the model data
+            // this will trigger the listenTo method above and a new list view
+            // will be created as well
+            this.collection.create({title: this.input.val()});
+
+            this.input.val('');
+          }
+        }
+      });
+
       // Create a function to kick off our BackboneFire app
       function init() {
-        // The data we are syncing from Firebase
-        var collection = new TodoCollection();
-        var app = new AppView({ collection: collection });
+        // The data we are syncing from Firebase for lists
+        var listCollection = new ListCollection();
+        var listsContainer = new ListsContainerView({ collection: listCollection });
+
+        // The data we are syncing from Firebase for todos
+        var todoCollection = new TodoCollection();
+        var todosContainer = new TodosContainerView({ collection: todoCollection });
       }
 
       // When the document is ready, call the init function
