@@ -39,9 +39,14 @@
         }
       });
 
-      // A simple list model
-      var Todo = Backbone.Model.extend({
-        defaults: { title: "New List" }
+      var TodoList = Backbone.Model.extend({
+          defaults: {
+              name: ''
+          },
+
+          initialize: function(options) {
+              this.collection = options.collection;
+          }
       });
 
       // Create a Firebase collection and set the 'firebase' property
@@ -54,7 +59,7 @@
       // Create a Firebase collection and set the 'firebase' property
       // to the URL of your Firebase
       var ListCollection = Backbone.Firebase.Collection.extend({
-        model: Todo,
+        model: TodoList,
         url: "https://fiery-inferno-5703.firebaseio.com/lists"
       });
 
@@ -89,8 +94,8 @@
         }, 1000)
       });
 
-      // A view for an individual todo item
-      var ListNavItem = Backbone.Marionette.View.extend({
+      // A view for an individual list item
+      var ListNavItem = Backbone.Marionette.ItemView.extend({
         tagName:  "li",
         className: "list-title",
         template: _.template("<%= title %>"),
@@ -98,19 +103,20 @@
             'listTitle': '.list-title'
         },
         events: {
-          "click @ui.listTitle": "onClickRenderTodos"
+          "click": "onClickListNavItem"
         },
-        initialize: function() {
+        initialize: function(options) {
+          this.collection = options.collection;
           this.listenTo(this.model, "change", this.render);
         },
-        render: function() {
-          this.$el.html(this.template(this.model.toJSON()));
-          this.bindUIElements();
-          return this;
+        onClickListNavItem: function() {
+          // This needs to re-render the TodosContainerView
+          // Backbone.trigger('switch:list', this.model.)
         }
       });
 
       // The view for the todos container
+      // ListsContainersView needs to refresh this view on render
       var TodosContainerView = Backbone.View.extend({
         el: $('#todos-container'),
         events: {
@@ -143,6 +149,7 @@
       });
 
       // The view for the lists container
+      // Should create a new todos container view
       var ListsContainerView = Backbone.View.extend({
         el: $('#lists-container'),
         events: {
