@@ -1,15 +1,16 @@
 <html>
   <head>
 
-    <title>Todos</title>
+    <title>Lists of Todos </title>
     <!-- Firebase -->
     <script src='https://cdn.firebase.com/js/client/2.2.1/firebase.js'></script>
 
-    <!-- jQuery + Underscore + Backbone -->
+    <!-- jQuery + Underscore + Backbone + Marionette + BackboneRelational -->
     <script src='https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js'></script>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.2/underscore-min.js'></script>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.1.2/backbone-min.js'></script>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/backbone.marionette/2.4.1/backbone.marionette.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/backbone-relational/0.9.0/backbone-relational.min.js'></script>
 
     <!-- BackboneFire -->
     <script src="https://cdn.firebase.com/libs/backbonefire/0.5.1/backbonefire.min.js"></script>
@@ -19,7 +20,6 @@
 
     <div id="app-container">
       <div id="todos-container">
-        <ul id="todo-list"></ul>
         <input type="text" id="new-todo" placeholder="New Todo" />
       </div>
 
@@ -31,21 +31,33 @@
 
     <script>
       // A simple todo model
-      var Todo = Backbone.Model.extend({
-        defaults: { title: "New Todo" },
+      var Todo = Backbone.RelationalModel.extend({
+        defaults: { text: "New Todo" },
 
-        setTitle: function(title) {
-            this.save({'title': title}, {patch: true});
+        setText: function(text) {
+            this.save({'text': text}, {patch: true});
         }
       });
 
-      var TodoList = Backbone.Model.extend({
-          defaults: {
-              name: ''
-          },
+      var List = Backbone.RelationalModel.extend({
+          defaults: { name: "" },
 
-          initialize: function(options) {
-              this.collection = options.collection;
+          relations: [{
+            type: Backbone.HasMany,
+            key: 'todos',
+            relatedModel: 'Todo',
+            collectionType: 'TodoCollection',
+            collectionOptions: function(model) {
+              return {listID: model.id};
+            },
+            reverseRelation: {
+              key: 'listedWith',
+              includeInJSON: 'id'
+              // 'relatedModel' is automatically set to 'List'; the 'relationType' to 'HasOne'.
+            }
+          }],
+
+          initialize: function() {
           }
       });
 
@@ -53,104 +65,119 @@
       // to the URL of your Firebase
       var TodoCollection = Backbone.Firebase.Collection.extend({
         model: Todo,
-        url: "https://fiery-inferno-5703.firebaseio.com/todos"
+        initialize: function(whoknows, options) {
+          this.listID = options.listID;
+        },
+        url: function() {
+          return "https://fiery-inferno-5703.firebaseio.com/todos-" + this.listID;
+        }
       });
 
       // Create a Firebase collection and set the 'firebase' property
       // to the URL of your Firebase
       var ListCollection = Backbone.Firebase.Collection.extend({
-        model: TodoList,
+        model: List,
         url: "https://fiery-inferno-5703.firebaseio.com/lists"
       });
 
       // A view for an individual todo item
       var TodoView = Backbone.Marionette.View.extend({
         tagName:  "li",
-        template: _.template("<textarea class='todo-title'></textarea> <a href='/delete' class='delete'>delete</a>"),
+        template: _.template("<textarea class='todo-text'></textarea> <a href='/delete' class='delete'>delete</a>"),
         ui: {
-            'todoTitle': '.todo-title'
+            'todoText': '.todo-text'
         },
         events: {
           "click .delete": "onDelete",
-          "keyup @ui.todoTitle": "editTodo"
+          "keyup @ui.todoText": "editTodo"
         },
         initialize: function() {
           this.listenTo(this.model, "change", this.render);
         },
         onDelete: function(event) {
           event.preventDefault();
-          console.log(this.model.collection);
           this.model.collection.remove(this.model);
           this.remove();
         },
         render: function() {
           this.$el.html(this.template(this.model.toJSON()));
           this.bindUIElements();
-          this.$('textarea').val(this.model.get('title'));
+          this.$('textarea').val(this.model.get('text'));
           return this;
         },
         editTodo: _.debounce(function(e) {
-          this.model.setTitle(this.ui.todoTitle.val());
+          this.model.setText(this.ui.todoText.val());
         }, 1000)
       });
 
       // A view for an individual list item
       var ListNavItem = Backbone.Marionette.ItemView.extend({
         tagName:  "li",
-        className: "list-title",
-        template: _.template("<%= title %>"),
+        className: "list-name",
+        template: _.template("<%= name %>"),
         ui: {
-            'listTitle': '.list-title'
+            'listName': '.list-name'
         },
         events: {
           "click": "onClickListNavItem"
         },
-        initialize: function(options) {
-          this.collection = options.collection;
+        initialize: function() {
           this.listenTo(this.model, "change", this.render);
         },
         onClickListNavItem: function() {
-          // This needs to re-render the TodosContainerView
-          // Backbone.trigger('switch:list', this.model.)
+          if (activeList) {
+            activeList.destroy();
+          }
+
+          var todos = this.model.get('todos');
+          activeList = new TodosContainerView({collection: todos});
+          activeList.render();
+          $('#todos-container').prepend(activeList.el);
         }
       });
 
       // The view for the todos container
       // ListsContainersView needs to refresh this view on render
-      var TodosContainerView = Backbone.View.extend({
-        el: $('#todos-container'),
-        events: {
-          "keypress #new-todo" : "createTodo",
-        },
-        initialize: function() {
+      var TodosContainerView = Backbone.Marionette.CollectionView.extend({
+        childView: TodoView,
+        tagName: 'ul',
+
+        onRender: function() {
           this.list = this.$("#todo-list"); // the list to append to
           this.input = this.$("#new-todo"); // the textbox for new todos
+          this.delegateEvents();
+        }
+      });
 
-          // by listening to when the collection changes we
-          // can add new items in realtime
-          this.listenTo(this.collection, 'add', this.addOne);
+      var AddTodoView = Backbone.Marionette.View.extend({
+        el: '#todos-container',
+        ui: {
+          input: '#new-todo'
         },
-        addOne: function(todo) {
-          var view = new TodoView({model: todo});
-          this.list.append(view.render().el);
+        events: {
+          "keypress @ui.input" : "createTodo",
+        },
+        initialize: function() {
+          this.bindUIElements();
         },
         createTodo: function(e) {
+          console.log("creating???");
           if (e.keyCode == 13) {
-            if (!this.input.val()) { return; }
+            if (!this.ui.input.val()) { return; }
 
             // create a new location in firebase and save the model data
             // this will trigger the listenTo method above and a new todo view
             // will be created as well
-            this.collection.create({title: this.input.val()});
+            activeList.collection.create( { text: this.ui.input.val() } );
 
-            this.input.val('');
+            this.ui.input.val('');
           }
         }
       });
 
       // The view for the lists container
-      // Should create a new todos container view
-      var ListsContainerView = Backbone.View.extend({
+      var ListsContainerView = Backbone.Marionette.CollectionView.extend({
+        childView: ListNavItem,
         el: $('#lists-container'),
         events: {
           "keypress #new-list" : "createList",
@@ -158,14 +185,6 @@
         initialize: function() {
           this.lists = this.$("#lists-nav"); // the nav to append to
           this.input = this.$("#new-list"); // the textbox for new lists
-
-          // by listening to when the collection changes we
-          // can add new items in realtime
-          this.listenTo(this.collection, 'add', this.addOne);
-        },
-        addOne: function(list) {
-          var view = new ListNavItem({model: list});
-          this.lists.append(view.render().el);
         },
         createList: function(e) {
           if (e.keyCode == 13) {
@@ -174,22 +193,28 @@
             // create a new location in firebase and save the model data
             // this will trigger the listenTo method above and a new list view
             // will be created as well
-            this.collection.create({title: this.input.val()});
+            this.collection.create({name: this.input.val()});
 
             this.input.val('');
           }
         }
       });
 
+
+      var TodoRegion = Backbone.Marionette.Region.extend({
+        el: '#todos-list'
+      });
+
+      var activeList = null;
+
       // Create a function to kick off our BackboneFire app
       function init() {
         // The data we are syncing from Firebase for lists
         var listCollection = new ListCollection();
         var listsContainer = new ListsContainerView({ collection: listCollection });
+        listsContainer.render();
 
-        // The data we are syncing from Firebase for todos
-        var todoCollection = new TodoCollection();
-        var todosContainer = new TodosContainerView({ collection: todoCollection });
+        new AddTodoView();
       }
 
       // When the document is ready, call the init function
